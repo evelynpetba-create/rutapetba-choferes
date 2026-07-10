@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RutaPetba — Choferes</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e6e6e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RutaPetba">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#16191d;--ink2:#2b3036;--slate:#5b636e;--slate2:#878f9a;
+  --line:#e3e6ea;--line2:#eef0f3;--paper:#f6f7f9;--card:#fff;
+  --primary:#0e6e6e;--primary-d:#0a5757;--primary-soft:#e3f1f0;
+  --amber:#b8740a;--amber-soft:#fbf0dc;--red:#b3261e;--red-soft:#fbe6e4;
+  --green:#1f7a44;--green-soft:#e4f2ea;
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--paper);color:var(--ink);font-size:16px;-webkit-font-smoothing:antialiased;padding-bottom:40px}
+.top{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:14px 16px;z-index:5}
+.top h1{font-size:17px}
+.top .sub{color:var(--slate);font-size:13px;margin-top:2px}
+.wrap{padding:14px;max-width:520px;margin:0 auto}
+.btn{font-family:var(--sans);font-weight:600;font-size:15px;border:1px solid var(--line);background:#fff;color:var(--ink2);padding:13px 16px;border-radius:10px;width:100%}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+select,input{font-family:var(--sans);font-size:16px;padding:12px;border:1px solid var(--line);border-radius:10px;width:100%;background:#fff}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:13px;color:var(--slate);margin-bottom:6px;font-weight:600}
+.vuelta-h{display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px}
+.vuelta-h h2{font-size:15px}
+.vuelta-h .cnt{font-family:var(--mono);font-size:12px;background:var(--line2);padding:3px 9px;border-radius:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-bottom:10px}
+.card.done{opacity:.55}
+.card .cli{font-weight:700;font-size:15.5px}
+.card .dir{color:var(--slate);font-size:13.5px;margin-top:2px}
+.card .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--slate)}
+.card .pill{background:var(--line2);padding:2px 8px;border-radius:20px}
+.card .pill.urgente,.card .pill.temprana{background:var(--amber-soft);color:var(--amber)}
+.card .obs{margin-top:8px;font-size:13px;background:var(--paper);border-radius:8px;padding:8px 10px}
+.chk{margin-top:12px;display:flex;align-items:center;gap:10px;padding:13px;border-radius:10px;border:1px solid var(--line);cursor:pointer;font-weight:600;justify-content:center;-webkit-tap-highlight-color:transparent;user-select:none}
+.chk.on{background:var(--green-soft);border-color:var(--green);color:var(--green)}
+.placeholder{text-align:center;color:var(--slate);padding:40px 20px}
+.linkbtn{color:var(--primary);font-weight:600;font-size:13px;background:none;border:none;font-family:var(--sans)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:9px;font-size:13px;font-weight:500;opacity:0;transition:.2s;z-index:9}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>🚚 RutaPetba · Choferes</h1>
+  <div class="sub" id="subHead">—</div>
+  <button class="btn pri" id="btnInstalar" style="display:none;margin-top:10px">⬇ Instalar app</button>
+</div>
+<div class="wrap" id="app"></div>
+<script>
+const SUPABASE_URL='https://vqezjwpnsiclnlpduryj.supabase.co';
+const SUPABASE_KEY='sb_publishable_CB_3BV2IjzU-K8gjHDgJhg_Lgf8EiKM';
+const $=s=>document.querySelector(s);
+
+async function sb(path,opts={}){
+  const res=await fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',...(opts.headers||{})}});
+  if(!res.ok){const t=await res.text();throw new Error(res.status+' '+t);}
+  const t=await res.text();
+  return t?JSON.parse(t):null;
+}
+let toastT;function toast(msg){let t=$('#toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';document.body.appendChild(t);}t.textContent=msg;t.style.opacity='1';clearTimeout(toastT);toastT=setTimeout(()=>t.style.opacity='0',2600);}
+function esc(s){return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+const PAT_KEY='rutapetba_chofer_patente';
+function hoyISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fmtFechaLarga(iso){const [y,m,d]=iso.split('-');return d+'/'+m+'/'+y;}
+
+let state={patente:localStorage.getItem(PAT_KEY)||'',fecha:hoyISO(),jornada:null,pedidos:[]};
+
+async function init(){
+  if(!state.patente){await renderSelectorCamioneta();return;}
+  await renderRuta();
+}
+
+async function renderSelectorCamioneta(){
+  $('#subHead').textContent='Elegí tu camioneta';
+  $('#app').innerHTML='<div class="placeholder">Cargando camionetas…</div>';
+  try{
+    const flota=await sb('flota?activa=eq.true&select=patente,modelo,chofer&order=patente.asc');
+    $('#app').innerHTML=`
+      <div class="field"><label>Camioneta</label>
+        <select id="selPat"><option value="">Elegí…</option>${flota.map(f=>`<option value="${esc(f.patente)}">${esc(f.patente)} — ${esc(f.modelo||'')}${f.chofer?' ('+esc(f.chofer)+')':''}</option>`).join('')}</select>
+      </div>
+      <button class="btn pri" id="btnEntrar">Entrar</button>`;
+    $('#btnEntrar').onclick=()=>{
+      const v=$('#selPat').value;
+      if(!v){toast('Elegí una camioneta.');return;}
+      state.patente=v;localStorage.setItem(PAT_KEY,v);
+      renderRuta();
+    };
+  }catch(e){
+    $('#app').innerHTML=`<div class="placeholder">No se pudo cargar la flota.<br>${esc(e.message)}</div>`;
+  }
+}
+
+async function renderRuta(){
+  $('#subHead').innerHTML=`${esc(state.patente)} · ${fmtFechaLarga(state.fecha)} · <button class="linkbtn" id="btnCambiar">cambiar camioneta</button>`;
+  $('#btnCambiar').onclick=()=>{state.patente='';localStorage.removeItem(PAT_KEY);renderSelectorCamioneta();};
+  $('#app').innerHTML='<div class="placeholder">Cargando ruta…</div>';
+  try{
+    const jornadas=await sb(`jornadas?fecha=eq.${state.fecha}&select=id`);
+    if(!jornadas.length){
+      $('#app').innerHTML='<div class="placeholder">Todavía no se publicó la ruta de hoy.<br><br><button class="linkbtn" id="btnRefrescar">🔄 Actualizar</button></div>';
+      $('#btnRefrescar').onclick=renderRuta;
+      return;
+    }
+    state.jornada=jornadas[0].id;
+    const pedidos=await sb(`pedidos?jornada_id=eq.${state.jornada}&asig_patente=eq.${state.patente}&nc=eq.false&retira=eq.false&order=asig_vuelta.asc,orden.asc`);
+    state.pedidos=pedidos;
+    pintarPedidos();
+  }catch(e){
+    $('#app').innerHTML=`<div class="placeholder">Error al cargar la ruta.<br>${esc(e.message)}</div>`;
+  }
+}
+
+function pintarPedidos(){
+  if(!state.pedidos.length){
+    $('#app').innerHTML='<div class="placeholder">No tenés pedidos asignados hoy.<br><br><button class="linkbtn" id="btnRefrescar">🔄 Actualizar</button></div>';
+    $('#btnRefrescar').onclick=renderRuta;
+    return;
+  }
+  const bloques=[1,2].map(v=>{
+    const items=state.pedidos.filter(p=>p.asig_vuelta===v);
+    if(!items.length)return'';
+    const hechos=items.filter(p=>p.entregado).length;
+    return `<div class="vuelta-h"><h2>${v}ª vuelta</h2><span class="cnt">${hechos}/${items.length} entregados</span></div>
+      ${items.map(cardPedido).join('')}`;
+  }).join('');
+  $('#app').innerHTML=bloques+'<button class="linkbtn" id="btnRefrescar" style="display:block;margin:18px auto">🔄 Actualizar</button>';
+  $('#btnRefrescar').onclick=renderRuta;
+  state.pedidos.forEach(p=>{
+    const el=$('#chk-'+p.id);
+    if(el)el.onclick=()=>toggleEntregado(p.id);
+  });
+}
+
+function cardPedido(p){
+  return `<div class="card ${p.entregado?'done':''}" id="card-${p.id}">
+    <div class="cli">${esc(p.cliente)}</div>
+    <div class="dir">${esc(p.dir||'—')}${p.loc?' · '+esc(p.loc):''}</div>
+    <div class="meta">
+      ${p.horario?`<span class="pill">${esc(p.horario)}</span>`:''}
+      ${p.prioridad&&p.prioridad!=='normal'?`<span class="pill ${esc(p.prioridad)}">${esc(p.prioridad)}</span>`:''}
+      <span class="pill">${p.kg} kg</span>
+    </div>
+    ${p.obs?`<div class="obs">${esc(p.obs)}</div>`:''}
+    <div class="chk ${p.entregado?'on':''}" id="chk-${p.id}">${p.entregado?'✓ Entregado':'Marcar entregado'}</div>
+  </div>`;
+}
+
+async function toggleEntregado(id){
+  const p=state.pedidos.find(x=>x.id===id);
+  const nuevo=!p.entregado;
+  p.entregado=nuevo;p.entregado_at=nuevo?new Date().toISOString():null;
+  pintarPedidos();
+  try{
+    await sb(`pedidos?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({entregado:nuevo,entregado_at:p.entregado_at})});
+  }catch(e){
+    p.entregado=!nuevo;pintarPedidos();
+    toast('No se pudo guardar. Revisá la conexión.');
+  }
+}
+
+/* ---- instalar como app (PWA) ---- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+let deferredInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  deferredInstall=e;
+  $('#btnInstalar').style.display='block';
+});
+$('#btnInstalar').onclick=async()=>{
+  if(!deferredInstall)return;
+  deferredInstall.prompt();
+  await deferredInstall.userChoice;
+  deferredInstall=null;
+  $('#btnInstalar').style.display='none';
+};
+window.addEventListener('appinstalled',()=>{$('#btnInstalar').style.display='none';toast('App instalada ✓');});
+const esStandalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone;
+const esIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+if(esIOS&&!esStandalone){
+  const n=document.createElement('div');
+  n.style.cssText='margin-top:10px;font-size:12.5px;color:var(--slate)';
+  n.textContent='Para instalarla: tocá Compartir → "Agregar a inicio".';
+  $('.top').appendChild(n);
+}
+
+init();
+</script>
+</body>
+</html>
