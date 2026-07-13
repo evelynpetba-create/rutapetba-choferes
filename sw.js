@@ -1,4 +1,4 @@
-const CACHE='rutapetba-choferes-v2';
+const CACHE='rutapetba-choferes-v3';
 const SHELL=['./','./index.html','./manifest.json','./icon-192.png','./icon-512.png','./icon-512-maskable.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css','https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'];
 

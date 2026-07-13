@@ -47,8 +47,12 @@ select,input{font-family:var(--sans);font-size:16px;padding:12px;border:1px soli
 .card .pill{background:var(--line2);padding:2px 8px;border-radius:20px}
 .card .pill.urgente,.card .pill.temprana{background:var(--amber-soft);color:var(--amber)}
 .card .obs{margin-top:8px;font-size:13px;background:var(--paper);border-radius:8px;padding:8px 10px}
-.chk{margin-top:12px;display:flex;align-items:center;gap:10px;padding:13px;border-radius:10px;border:1px solid var(--line);cursor:pointer;font-weight:600;justify-content:center;-webkit-tap-highlight-color:transparent;user-select:none}
+.chk{padding:13px;border-radius:10px;border:1px solid var(--line);cursor:pointer;font-weight:600;text-align:center;-webkit-tap-highlight-color:transparent;user-select:none;font-size:14px}
 .chk.on{background:var(--green-soft);border-color:var(--green);color:var(--green)}
+.chk.bad{color:var(--slate)}
+.chk.bad.on{background:var(--red-soft);border-color:var(--red);color:var(--red)}
+.accion-row{display:flex;gap:8px;margin-top:12px}
+.accion-row .chk{flex:1}
 .placeholder{text-align:center;color:var(--slate);padding:40px 20px}
 .linkbtn{color:var(--primary);font-weight:600;font-size:13px;background:none;border:none;font-family:var(--sans)}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:9px;font-size:13px;font-weight:500;opacity:0;transition:.2s;z-index:9}
@@ -61,6 +65,7 @@ select,input{font-family:var(--sans);font-size:16px;padding:12px;border:1px soli
 .pin.v1{background:var(--primary)}
 .pin.v2{background:var(--amber)}
 .pin.done{background:var(--green)}
+.pin.bad{background:var(--red)}
 .popup-cli{font-weight:700;margin-bottom:3px}
 .popup-dir{color:var(--slate);font-size:12.5px;margin-bottom:6px}
 .popup-link{color:var(--primary);font-weight:600;font-size:13px;text-decoration:none}
@@ -83,21 +88,63 @@ select,input{font-family:var(--sans);font-size:16px;padding:12px;border:1px soli
 const SUPABASE_URL='https://vqezjwpnsiclnlpduryj.supabase.co';
 const SUPABASE_KEY='sb_publishable_CB_3BV2IjzU-K8gjHDgJhg_Lgf8EiKM';
 const $=s=>document.querySelector(s);
+let toastT;function toast(msg){let t=$('#toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';document.body.appendChild(t);}t.textContent=msg;t.style.opacity='1';clearTimeout(toastT);toastT=setTimeout(()=>t.style.opacity='0',2600);}
+function esc(s){return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function hoyISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fmtFechaLarga(iso){const [y,m,d]=iso.split('-');return d+'/'+m+'/'+y;}
 
+/* ---- sesión (Supabase Auth) ---- */
+const SESSION_KEY='rutapetba_chofer_session';
+function loadSession(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||'null');}catch(e){return null;}}
+function saveSession(data){
+  const s={access_token:data.access_token,refresh_token:data.refresh_token,user_id:data.user.id};
+  localStorage.setItem(SESSION_KEY,JSON.stringify(s));
+  return s;
+}
+function clearSession(){localStorage.removeItem(SESSION_KEY);}
+async function authRequest(path,body){
+  const res=await fetch(`${SUPABASE_URL}/auth/v1/${path}`,{method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(data.error_description||data.msg||data.error||(res.status+' error'));
+  return data;
+}
+async function login(email,password){return saveSession(await authRequest('token?grant_type=password',{email,password}));}
+async function refreshSession(){
+  const s=loadSession();
+  if(!s||!s.refresh_token)throw new Error('sin sesión');
+  return saveSession(await authRequest('token?grant_type=refresh_token',{refresh_token:s.refresh_token}));
+}
+function logout(){clearSession();state.patente='';state.choferNombre='';renderLogin();}
+
+/* ---- llamadas a la API de Supabase (con el token del chofer logueado) ---- */
 async function sb(path,opts={}){
-  const res=await fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',...(opts.headers||{})}});
+  const session=loadSession();
+  const tok=session?session.access_token:SUPABASE_KEY;
+  const doFetch=t=>fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+t,'Content-Type':'application/json',...(opts.headers||{})}});
+  let res=await doFetch(tok);
+  if(res.status===401&&session){
+    try{const fresh=await refreshSession();res=await doFetch(fresh.access_token);}
+    catch(e){clearSession();throw new Error('Tu sesión venció, volvé a iniciar sesión.');}
+  }
   if(!res.ok){const t=await res.text();throw new Error(res.status+' '+t);}
   const t=await res.text();
   return t?JSON.parse(t):null;
 }
-let toastT;function toast(msg){let t=$('#toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';document.body.appendChild(t);}t.textContent=msg;t.style.opacity='1';clearTimeout(toastT);toastT=setTimeout(()=>t.style.opacity='0',2600);}
-function esc(s){return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function subirFoto(pedidoId,file){
+  const session=loadSession();
+  if(!session)throw new Error('No hay sesión activa.');
+  const ext=(file.name.split('.').pop()||'jpg').toLowerCase();
+  const path=`${pedidoId}-${Date.now()}.${ext}`;
+  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/entregas/${path}`,{method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+session.access_token,'Content-Type':file.type||'image/jpeg'},
+    body:file});
+  if(!res.ok){const t=await res.text();throw new Error(res.status+' '+t);}
+  return `${SUPABASE_URL}/storage/v1/object/public/entregas/${path}`;
+}
 
-const PAT_KEY='rutapetba_chofer_patente';
-function hoyISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function fmtFechaLarga(iso){const [y,m,d]=iso.split('-');return d+'/'+m+'/'+y;}
-
-let state={patente:localStorage.getItem(PAT_KEY)||'',fecha:hoyISO(),jornada:null,pedidos:[],vista:'lista'};
+let state={patente:'',choferNombre:'',fecha:hoyISO(),jornada:null,pedidos:[],vista:'lista'};
 
 /* ---- mapa (Leaflet + OpenStreetMap) ---- */
 let leafletMap=null,markersLayer=null;
@@ -108,8 +155,8 @@ function ensureMapa(){
   markersLayer=L.layerGroup().addTo(leafletMap);
   leafletMap.setView([-34.6037,-58.3816],11);
 }
-function pinIcon(vuelta,numero,entregado){
-  const cls='pin '+(entregado?'done':(vuelta===2?'v2':'v1'));
+function pinIcon(vuelta,numero,entregado,noEntregado){
+  const cls='pin '+(entregado?'done':(noEntregado?'bad':(vuelta===2?'v2':'v1')));
   return L.divIcon({className:'',html:`<div class="${cls}"><span>${numero}</span></div>`,iconSize:[26,26],iconAnchor:[13,26],popupAnchor:[0,-28]});
 }
 function renderMapa(){
@@ -119,7 +166,7 @@ function renderMapa(){
   const porVuelta={};
   conGeo.forEach(p=>{
     porVuelta[p.asig_vuelta]=(porVuelta[p.asig_vuelta]||0)+1;
-    const marker=L.marker([p.lat,p.lng],{icon:pinIcon(p.asig_vuelta,porVuelta[p.asig_vuelta],p.entregado)}).addTo(markersLayer);
+    const marker=L.marker([p.lat,p.lng],{icon:pinIcon(p.asig_vuelta,porVuelta[p.asig_vuelta],p.entregado,p.no_entregado)}).addTo(markersLayer);
     const gmaps=`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
     marker.bindPopup(`<div class="popup-cli">${esc(p.cliente)}</div><div class="popup-dir">${esc(p.dir||'')}${p.loc?' · '+esc(p.loc):''}</div><a class="popup-link" href="${gmaps}" target="_blank" rel="noopener">📍 Cómo llegar</a>`);
   });
@@ -141,35 +188,63 @@ $('#tabLista').onclick=()=>mostrarVista('lista');
 $('#tabMapa').onclick=()=>mostrarVista('mapa');
 
 async function init(){
-  if(!state.patente){await renderSelectorCamioneta();return;}
-  await renderRuta();
+  const session=loadSession();
+  if(!session){renderLogin();return;}
+  await cargarChofer();
 }
 
-async function renderSelectorCamioneta(){
+function renderLogin(){
   $('#tabs').style.display='none';mostrarVista('lista');
-  $('#subHead').textContent='Elegí tu camioneta';
-  $('#app').innerHTML='<div class="placeholder">Cargando camionetas…</div>';
+  $('#subHead').textContent='Iniciá sesión';
+  $('#app').innerHTML=`
+    <div class="field"><label>Email</label><input id="loginEmail" type="email" autocomplete="username" inputmode="email"></div>
+    <div class="field"><label>Contraseña</label><input id="loginPass" type="password" autocomplete="current-password"></div>
+    <button class="btn pri" id="btnLogin">Ingresar</button>
+    <div id="loginErr" style="color:var(--red);font-size:13px;margin-top:10px"></div>`;
+  const intentar=async()=>{
+    const email=$('#loginEmail').value.trim();
+    const pass=$('#loginPass').value;
+    if(!email||!pass){$('#loginErr').textContent='Completá email y contraseña.';return;}
+    const btn=$('#btnLogin');btn.disabled=true;btn.textContent='Ingresando…';$('#loginErr').textContent='';
+    try{
+      await login(email,pass);
+      await cargarChofer();
+    }catch(e){
+      $('#loginErr').textContent='No se pudo ingresar: '+e.message;
+    }finally{
+      btn.disabled=false;btn.textContent='Ingresar';
+    }
+  };
+  $('#btnLogin').onclick=intentar;
+  $('#loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')intentar();});
+}
+
+async function cargarChofer(){
+  $('#tabs').style.display='none';mostrarVista('lista');
+  $('#subHead').textContent='Cargando tu perfil…';
+  $('#app').innerHTML='<div class="placeholder">Cargando tu perfil…</div>';
   try{
-    const flota=await sb('flota?activa=eq.true&select=patente,modelo,chofer&order=patente.asc');
-    $('#app').innerHTML=`
-      <div class="field"><label>Camioneta</label>
-        <select id="selPat"><option value="">Elegí…</option>${flota.map(f=>`<option value="${esc(f.patente)}">${esc(f.patente)} — ${esc(f.modelo||'')}${f.chofer?' ('+esc(f.chofer)+')':''}</option>`).join('')}</select>
-      </div>
-      <button class="btn pri" id="btnEntrar">Entrar</button>`;
-    $('#btnEntrar').onclick=()=>{
-      const v=$('#selPat').value;
-      if(!v){toast('Elegí una camioneta.');return;}
-      state.patente=v;localStorage.setItem(PAT_KEY,v);
-      renderRuta();
-    };
+    const session=loadSession();
+    const rows=await sb(`choferes?auth_user_id=eq.${session.user_id}&activo=eq.true&select=nombre,patente_actual`);
+    if(!rows.length||!rows[0].patente_actual){
+      $('#subHead').textContent='—';
+      $('#app').innerHTML='<div class="placeholder">Tu usuario todavía no está vinculado a ninguna camioneta.<br>Avisale a Evelyn.<br><br><button class="linkbtn" id="btnSalir">Cerrar sesión</button></div>';
+      $('#btnSalir').onclick=logout;
+      return;
+    }
+    state.choferNombre=rows[0].nombre;
+    state.patente=rows[0].patente_actual;
+    await renderRuta();
   }catch(e){
-    $('#app').innerHTML=`<div class="placeholder">No se pudo cargar la flota.<br>${esc(e.message)}</div>`;
+    $('#subHead').textContent='—';
+    $('#app').innerHTML=`<div class="placeholder">Error al cargar tu perfil.<br>${esc(e.message)}<br><br><button class="linkbtn" id="btnSalir">Cerrar sesión</button></div>`;
+    $('#btnSalir').onclick=logout;
   }
 }
 
 async function renderRuta(){
-  $('#subHead').innerHTML=`${esc(state.patente)} · ${fmtFechaLarga(state.fecha)} · <button class="linkbtn" id="btnCambiar">cambiar camioneta</button>`;
-  $('#btnCambiar').onclick=()=>{state.patente='';localStorage.removeItem(PAT_KEY);renderSelectorCamioneta();};
+  $('#subHead').innerHTML=`${esc(state.choferNombre)} · ${esc(state.patente)} · ${fmtFechaLarga(state.fecha)} · <button class="linkbtn" id="btnCambiar">cerrar sesión</button>`;
+  $('#btnCambiar').onclick=logout;
   $('#tabs').style.display='none';mostrarVista('lista');
   $('#app').innerHTML='<div class="placeholder">Cargando ruta…</div>';
   try{
@@ -199,20 +274,22 @@ function pintarPedidos(){
   const bloques=[1,2].map(v=>{
     const items=state.pedidos.filter(p=>p.asig_vuelta===v);
     if(!items.length)return'';
-    const hechos=items.filter(p=>p.entregado).length;
-    return `<div class="vuelta-h"><h2>${v}ª vuelta</h2><span class="cnt">${hechos}/${items.length} entregados</span></div>
+    const hechos=items.filter(p=>p.entregado||p.no_entregado).length;
+    return `<div class="vuelta-h"><h2>${v}ª vuelta</h2><span class="cnt">${hechos}/${items.length} resueltos</span></div>
       ${items.map(cardPedido).join('')}`;
   }).join('');
   $('#app').innerHTML=bloques+'<button class="linkbtn" id="btnRefrescar" style="display:block;margin:18px auto">🔄 Actualizar</button>';
   $('#btnRefrescar').onclick=renderRuta;
   state.pedidos.forEach(p=>{
-    const el=$('#chk-'+p.id);
-    if(el)el.onclick=()=>toggleEntregado(p.id);
+    const okEl=$('#chkOk-'+p.id);if(okEl)okEl.onclick=()=>marcarEntregado(p.id);
+    const noEl=$('#chkNo-'+p.id);if(noEl)noEl.onclick=()=>$('#foto-'+p.id).click();
+    const fileEl=$('#foto-'+p.id);if(fileEl)fileEl.onchange=e=>{if(e.target.files[0])marcarNoEntregado(p.id,e.target.files[0]);e.target.value='';};
   });
 }
 
 function cardPedido(p){
-  return `<div class="card ${p.entregado?'done':''}" id="card-${p.id}">
+  const entregado=!!p.entregado,noEntregado=!!p.no_entregado;
+  return `<div class="card ${entregado||noEntregado?'done':''}" id="card-${p.id}">
     <div class="cli">${esc(p.cliente)}</div>
     <div class="dir">${esc(p.dir||'—')}${p.loc?' · '+esc(p.loc):''}</div>
     <div class="meta">
@@ -221,20 +298,42 @@ function cardPedido(p){
       <span class="pill">${p.kg} kg</span>
     </div>
     ${p.obs?`<div class="obs">${esc(p.obs)}</div>`:''}
-    <div class="chk ${p.entregado?'on':''}" id="chk-${p.id}">${p.entregado?'✓ Entregado':'Marcar entregado'}</div>
+    ${p.foto_url?`<div style="margin-top:8px"><a class="linkbtn" href="${p.foto_url}" target="_blank" rel="noopener">📷 Ver foto de no-entrega</a></div>`:''}
+    <div class="accion-row">
+      <div class="chk ${entregado?'on':''}" id="chkOk-${p.id}">✓ Entregado</div>
+      <div class="chk bad ${noEntregado?'on':''}" id="chkNo-${p.id}">✗ No entregado</div>
+    </div>
+    <input type="file" accept="image/*" capture="environment" id="foto-${p.id}" style="display:none">
   </div>`;
 }
 
-async function toggleEntregado(id){
+async function marcarEntregado(id){
   const p=state.pedidos.find(x=>x.id===id);
+  const prev={entregado:p.entregado,entregado_at:p.entregado_at,no_entregado:p.no_entregado,no_entregado_at:p.no_entregado_at};
   const nuevo=!p.entregado;
   p.entregado=nuevo;p.entregado_at=nuevo?new Date().toISOString():null;
+  if(nuevo){p.no_entregado=false;p.no_entregado_at=null;}
   pintarPedidos();
   try{
-    await sb(`pedidos?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({entregado:nuevo,entregado_at:p.entregado_at})});
+    await sb(`pedidos?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({entregado:p.entregado,entregado_at:p.entregado_at,no_entregado:p.no_entregado,no_entregado_at:p.no_entregado_at})});
   }catch(e){
-    p.entregado=!nuevo;pintarPedidos();
+    Object.assign(p,prev);pintarPedidos();
     toast('No se pudo guardar. Revisá la conexión.');
+  }
+}
+
+async function marcarNoEntregado(id,file){
+  const p=state.pedidos.find(x=>x.id===id);
+  toast('Subiendo foto…');
+  try{
+    const url=await subirFoto(id,file);
+    const now=new Date().toISOString();
+    await sb(`pedidos?id=eq.${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({no_entregado:true,no_entregado_at:now,entregado:false,entregado_at:null,foto_url:url})});
+    p.no_entregado=true;p.no_entregado_at=now;p.entregado=false;p.entregado_at=null;p.foto_url=url;
+    pintarPedidos();
+    toast('Guardado ✓');
+  }catch(e){
+    toast('No se pudo subir la foto: '+e.message);
   }
 }
 
